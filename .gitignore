@@ -1,0 +1,25 @@
+# Súkromné dáta (NIKDY nahrávať!)
+.env
+
+# Vygenerovaný obsah a logy
+output/
+logs/
+
+# Virtuálne prostredie
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE nastavenia
+.idea/
+.vscode/
+
+# OS súbory
+.DS_Store
+Thumbs.db

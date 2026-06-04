@@ -1,0 +1,9 @@
+httpx
+apscheduler
+pytrends
+requests
+reportlab
+diffusers
+transformers
+accelerate
+playwright
