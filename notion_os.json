@@ -1,0 +1,65 @@
+{
+  "name": "Freelancer OS",
+  "databases": [
+    {
+      "name": "Clients",
+      "properties": [
+        {
+          "name": "Name",
+          "type": "title"
+        },
+        {
+          "name": "Email",
+          "type": "email"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "options": [
+            "Active",
+            "Inactive",
+            "Lead"
+          ]
+        },
+        {
+          "name": "Projects",
+          "type": "relation",
+          "database": "Projects"
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "properties": [
+        {
+          "name": "Name",
+          "type": "title"
+        },
+        {
+          "name": "Client",
+          "type": "relation",
+          "database": "Clients"
+        },
+        {
+          "name": "Status",
+          "type": "select",
+          "options": [
+            "Not Started",
+            "In Progress",
+            "Completed",
+            "On Hold"
+          ]
+        },
+        {
+          "name": "Deadline",
+          "type": "date"
+        },
+        {
+          "name": "Budget",
+          "type": "number"
+        }
+      ]
+    }
+  ],
+  "pages": []
+}

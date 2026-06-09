@@ -28,7 +28,8 @@ class CoverAgent:
     def generate_cover(self, product: dict, folder: Path) -> Path | None:
         from diffusers import StableDiffusionPipeline
         
-        title = product.get("title", "Digital Product")
+        meta = product.get("metadata", {})
+        title = meta.get("title") or product.get("title", "Digital Product")
         ptype = product.get("_meta", {}).get("type", "prompt_pack")
         style = TYPE_STYLE.get(ptype, TYPE_STYLE["prompt_pack"])
         

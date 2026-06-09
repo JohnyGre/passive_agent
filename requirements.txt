@@ -2,7 +2,7 @@ httpx
 apscheduler
 pytrends
 requests
-reportlab
+python-docx
 diffusers
 transformers
 accelerate

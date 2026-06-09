@@ -47,8 +47,10 @@ class MarketingAgent:
 
     def generate_marketing(self, product: dict) -> dict | None:
         """Vygeneruje marketingové texty pre produkt."""
-        title = product.get("title", "Digital Product")
-        desc = product.get("description", "")
+        meta = product.get("metadata", {})
+        marketing = product.get("marketing", {})
+        title = meta.get("title") or product.get("title", "Digital Product")
+        desc = marketing.get("description") or meta.get("description") or product.get("description", "")
         ptype = product.get("_meta", {}).get("type", "product")
 
         log.info(f"Generujem marketing pre: {title}")

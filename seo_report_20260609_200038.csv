@@ -1,0 +1,4 @@
+url,status_code,title,meta_description
+https://example.com,200,Example Domain,N/A
+https://httpbin.org/status/200,200,N/A,N/A
+https://httpbin.org/status/404,404,N/A,N/A

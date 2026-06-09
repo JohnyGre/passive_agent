@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 # ── Načítanie .env ────────────────────────────
-BASE_DIR     = Path(__file__).parent
-env_path     = BASE_DIR / ".env"
+BASE_DIR = Path(__file__).parent
+env_path = BASE_DIR / ".env"
 if env_path.exists():
     with open(env_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -19,26 +19,26 @@ if env_path.exists():
                 os.environ[key.strip()] = val.strip()
 
 # ── Adresáre ────────────────────────────────
-OUTPUT_DIR   = BASE_DIR / "output"
+OUTPUT_DIR = BASE_DIR / "output"
 PRODUCTS_DIR = OUTPUT_DIR / "products"
-LOGS_DIR     = OUTPUT_DIR / "logs"
+LOGS_DIR = OUTPUT_DIR / "logs"
 
 for d in [OUTPUT_DIR, PRODUCTS_DIR, LOGS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # ── Ollama (VÝBER MODELU) ───────────────────
-OLLAMA_URL   = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # ODPORÚČANÉ MODELY:
 # 1. "qwen2.5-coder:32b" - Najlepší pre Python skripty + JSON (Môj výber)
 # 2. "deepseek-v3"       - Najvyššia celková inteligencia
 # 3. "llama3.3"          - Najlepší pre kreatívny text (Marketing)
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:32b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3-coder:480b-cloud")
 
 # ── Google Trends ───────────────────────────
-TRENDS_GEO       = "SK"               
-TRENDS_GEO_WIDE  = ""                 
+TRENDS_GEO = "SK"               
+TRENDS_GEO_WIDE = ""                 
 TRENDS_TIMEFRAME = "now 7-d"
 
 # Témy pre generovanie produktov
@@ -54,7 +54,7 @@ PRODUCT_TOPICS = [
 ]
 
 # ── Produkty ────────────────────────────────
-PRODUCTS_PER_DAY  = 10                
+PRODUCTS_PER_DAY = 10                
 
 # ── Rozvrh (24/7) ───────────────────────────
 SCHEDULE = {
@@ -65,10 +65,10 @@ SCHEDULE = {
 
 # ── Gumroad ─────────────────────────────────
 GUMROAD_ACCESS_TOKEN = os.environ.get("GUMROAD_ACCESS_TOKEN", "")
-GUMROAD_EMAIL        = os.environ.get("GUMROAD_EMAIL", "")
-GUMROAD_PASSWORD     = os.environ.get("GUMROAD_PASSWORD", "")
-PRODUCT_PRICE_USD    = 7.99 
+GUMROAD_EMAIL = os.environ.get("GUMROAD_EMAIL", "")
+GUMROAD_PASSWORD = os.environ.get("GUMROAD_PASSWORD", "")
+PRODUCT_PRICE_USD = 7.99 
 
 # ── Telegram ────────────────────────────────
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")

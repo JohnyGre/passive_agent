@@ -34,30 +34,48 @@ class GumroadAgent:
         self.published_log.write_text(json.dumps(self._published, ensure_ascii=False, indent=2))
 
     def publish_product_dir(self, product_dir: Path, price: float = 7.99) -> dict | None:
-        # 1. Nájdi hlavný súbor (PDF alebo TXT)
-        pdf_file = list(product_dir.glob("*.pdf"))
-        txt_file = list(product_dir.glob("*.txt"))
+        # 1. Nájdi hlavný súbor - preferuj PRO ZIP, potom DOCX, potom TXT
+        pro_dir = product_dir / "v2_PRO_Automation_Kit"
+        diy_dir = product_dir / "v1_DIY_Basic"
         
-        # Ignoruj marketing_x.txt
-        txt_file = [f for f in txt_file if "marketing" not in f.name]
+        # Hľadaj v PRO priečinku najprv
+        zip_files = list(pro_dir.glob("*.zip")) if pro_dir.exists() else []
+        docx_files = (list(pro_dir.glob("*.docx")) if pro_dir.exists() else []) + \
+                     (list(diy_dir.glob("*.docx")) if diy_dir.exists() else []) + \
+                     list(product_dir.glob("*.docx"))
+        pdf_files = list(product_dir.rglob("*.pdf"))
+        txt_files = [f for f in product_dir.rglob("*.txt") if "marketing" not in f.name]
         
-        main_file = pdf_file[0] if pdf_file else (txt_file[0] if txt_file else None)
+        main_file = (zip_files[0] if zip_files else
+                     docx_files[0] if docx_files else
+                     pdf_files[0] if pdf_files else
+                     txt_files[0] if txt_files else None)
         
         if not main_file:
             log.warning(f"Žiadny súbor v {product_dir.name}")
             return None
 
-        log.info(f"Nahrávam {main_file.name} na Gumroad...")
+        # Extrahuj meno produktu z data.json
+        product_name = product_dir.name.split("_", 2)[-1].replace("_", " ").title()
+        data_json = product_dir / "data.json"
+        if data_json.exists():
+            try:
+                data = json.loads(data_json.read_text(encoding="utf-8"))
+                meta = data.get("metadata", {})
+                product_name = meta.get("title") or data.get("title") or product_name
+            except Exception:
+                pass
+
+        log.info(f"Nahrávam {main_file.name} na Gumroad ({product_name})...")
 
         try:
             with open(main_file, "rb") as f:
-                # Správny multipart/form-data formát
                 files = {"product[file]": (main_file.name, f, "application/octet-stream")}
                 data = {
                     "access_token": self.token,
-                    "name": product_dir.name.split("_", 2)[-1].replace("_", " ").title(),
+                    "name": product_name,
                     "price": int(price * 100),
-                    "description": f"Premium digital product: {main_file.name}",
+                    "description": f"Premium digital product: {product_name}",
                     "published": "true"
                 }
                 
