@@ -26,7 +26,7 @@ from agents.validation_agent import ValidationAgent
 from config import (
     SCHEDULE,
     PRODUCTS_PER_DAY,
-    GUMROAD_ACCESS_TOKEN,
+    GUMROAD_ACCESS_TOKEN, # Importujeme GUMROAD_ACCESS_TOKEN
     GUMROAD_EMAIL,
     GUMROAD_PASSWORD,
 )
@@ -149,14 +149,36 @@ class Orchestrator:
                 if m_data:
                     self.marketing.save_marketing(m_data, product_dir)
 
-                # Cover generovanie - DOČASNE VYPNUTÉ
-                # cover_path = self.cover.generate_cover(product, folder=product_dir)
-                log.info("  🖼️ Cover generovanie je dočasne vypnuté.")
+                # Cover generovanie (lokálne SD - VRAM je voľná, obsah beží cez cloud)
+                log.info("  🖼️ Generujem produktový cover (Stable Diffusion)...")
+                cover_path = None # Inicializujeme cover_path
+                try:
+                    cover_path = self.cover.generate_cover(product, folder=product_dir)
+                    if cover_path:
+                        log.info(f"  ✅ Cover hotový: {cover_path.name}")
+                    else:
+                        log.warning("  ⚠️ Cover sa nevygeneroval (pokračujem bez neho).")
+                except Exception as cover_err:
+                    log.error(f"  ❌ Cover generovanie zlyhalo (produkt zostáva platný): {cover_err}")
 
                 self._cleanup_resources()
 
-                # 5. GUMROAD (Momentálne vypnuté)
-                log.info("  🛒 Gumroad upload je momentálne vypnutý (Local Test Mode).")
+                # 5. GUMROAD UPLOAD
+                if GUMROAD_ACCESS_TOKEN: # Ak je token definovaný, pokúsime sa uploadovať
+                    log.info("  ⬆️ Nahrávam produkt na Gumroad...")
+                    try:
+                        gumroad_result = self.gumroad.publish_product_dir(product_dir, suggested_price)
+                        if gumroad_result and cover_path:
+                            product_id = gumroad_result.get("product_id")
+                            if product_id:
+                                log.info(f"  ⬆️ Nahrávam cover pre produkt {product_id} na Gumroad...")
+                                self.uploader.upload_sync(product_id, cover_path)
+                                log.info("  ✅ Cover úspešne nahraný na Gumroad.")
+                        log.info("  ✅ Produkt úspešne nahraný na Gumroad.")
+                    except Exception as gumroad_err:
+                        log.error(f"  ❌ Gumroad upload zlyhal pre '{product_title}': {gumroad_err}")
+                else:
+                    log.info("  🛒 Gumroad upload je vypnutý (GUMROAD_ACCESS_TOKEN nie je nastavený).")
 
                 log.info(f"🏁 Hotovo pre: {topic}")
 

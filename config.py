@@ -54,7 +54,7 @@ PRODUCT_TOPICS = [
 ]
 
 # ── Produkty ────────────────────────────────
-PRODUCTS_PER_DAY = 10                
+PRODUCTS_PER_DAY = 1
 
 # ── Rozvrh (24/7) ───────────────────────────
 SCHEDULE = {

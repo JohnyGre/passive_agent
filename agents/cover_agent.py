@@ -27,6 +27,7 @@ class CoverAgent:
 
     def generate_cover(self, product: dict, folder: Path) -> Path | None:
         from diffusers import StableDiffusionPipeline
+        from PIL import Image
         
         meta = product.get("metadata", {})
         title = meta.get("title") or product.get("title", "Digital Product")
@@ -44,19 +45,33 @@ class CoverAgent:
             ).to("cuda")
             
             pipe.enable_attention_slicing()
+            pipe.vae.enable_slicing()
 
-            sd_prompt = f"Professional product cover for '{title}', {style}, no text, masterpiece, 8k, sharp focus"
-            negative = "text, words, letters, watermark, blurry, low quality, distorted, ugly, messy"
+            sd_prompt = (
+                f"Professional product cover for '{title}', {style}, "
+                "premium digital product packaging, clean centered composition, "
+                "soft studio lighting, subtle depth of field, trending on artstation, "
+                "marketing hero image, no text, masterpiece, ultra detailed, 8k, sharp focus"
+            )
+            negative = (
+                "text, words, letters, typography, watermark, signature, logo, "
+                "blurry, low quality, jpeg artifacts, distorted, deformed, ugly, "
+                "messy, cluttered, duplicate, cropped, out of frame"
+            )
             
             with torch.inference_mode():
                 result = pipe(
                     prompt=sd_prompt, 
                     negative_prompt=negative,
-                    num_inference_steps=25, 
-                    guidance_scale=8.0
+                    num_inference_steps=30,
+                    guidance_scale=7.5,
+                    height=512,
+                    width=512
                 )
             
             image = result.images[0]
+            # Upscale na prémiové rozlíšenie pre predaj (ostrejší vzhľad na Gumroad)
+            image = image.resize((1024, 1024), Image.LANCZOS)
             cover_path = folder / "cover.jpg"
             image.save(str(cover_path), "JPEG", quality=95)
 
@@ -66,7 +81,7 @@ class CoverAgent:
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
             
-            log.info(f"✅ Cover uložený a VRAM úplne uvoľnená pre ďalšie kroky.")
+            log.info("✅ Cover uložený (1024x1024) a VRAM úplne uvoľnená.")
             return cover_path
 
         except Exception as e:

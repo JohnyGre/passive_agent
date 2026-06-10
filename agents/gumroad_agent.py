@@ -33,6 +33,40 @@ class GumroadAgent:
         self.published_log.parent.mkdir(parents=True, exist_ok=True)
         self.published_log.write_text(json.dumps(self._published, ensure_ascii=False, indent=2))
 
+    def _build_description(self, manifest: dict, product_name: str) -> str:
+        """Zostaví bohatý, predajný HTML popis z manifestu (marketing + metadata)."""
+        meta = manifest.get("metadata", {})
+        mk = manifest.get("marketing", {})
+        ptype = manifest.get("_meta", {}).get("type", "")
+
+        lead = mk.get("description") or meta.get("description") or f"Premium digital product: {product_name}"
+        sub = meta.get("description") if (meta.get("description") and meta.get("description") != lead) else ""
+        hooks = [h for h in mk.get("social_hooks", []) if h][:3]
+
+        if ptype == "prompt_pack":
+            includes = [
+                "🎯 Curated library of high-converting, ready-to-use prompts",
+                "📘 Professional strategy guide (DOCX)",
+                "🐍 Python helper to run prompts via API",
+                "⚙️ One-click setup for Windows &amp; macOS/Linux",
+            ]
+        else:
+            includes = [
+                "📘 Step-by-step professional guide (DOCX)",
+                "🐍 Ready-to-run Python automation scripts",
+                "⚙️ One-click setup (Windows &amp; macOS/Linux)",
+                "📄 requirements.txt + README included",
+            ]
+
+        parts = [f"<p><strong>{lead}</strong></p>"]
+        if sub:
+            parts.append(f"<p>{sub}</p>")
+        if hooks:
+            parts.append("<h3>Why you'll love it</h3><ul>" + "".join(f"<li>{h}</li>" for h in hooks) + "</ul>")
+        parts.append("<h3>What's inside</h3><ul>" + "".join(f"<li>{x}</li>" for x in includes) + "</ul>")
+        parts.append("<p><em>Instant download · Plug &amp; play · Lifetime access.</em></p>")
+        return "".join(parts)
+
     def publish_product_dir(self, product_dir: Path, price: float = 7.99) -> dict | None:
         # 1. Nájdi hlavný súbor - preferuj PRO ZIP, potom DOCX, potom TXT
         pro_dir = product_dir / "v2_PRO_Automation_Kit"
@@ -55,16 +89,19 @@ class GumroadAgent:
             log.warning(f"Žiadny súbor v {product_dir.name}")
             return None
 
-        # Extrahuj meno produktu z data.json
+        # Extrahuj meno produktu + bohatý popis z data.json
         product_name = product_dir.name.split("_", 2)[-1].replace("_", " ").title()
+        manifest = {}
         data_json = product_dir / "data.json"
         if data_json.exists():
             try:
-                data = json.loads(data_json.read_text(encoding="utf-8"))
-                meta = data.get("metadata", {})
-                product_name = meta.get("title") or data.get("title") or product_name
+                manifest = json.loads(data_json.read_text(encoding="utf-8"))
+                meta = manifest.get("metadata", {})
+                product_name = meta.get("title") or manifest.get("title") or product_name
             except Exception:
                 pass
+
+        description = self._build_description(manifest, product_name)
 
         log.info(f"Nahrávam {main_file.name} na Gumroad ({product_name})...")
 
@@ -75,7 +112,7 @@ class GumroadAgent:
                     "access_token": self.token,
                     "name": product_name,
                     "price": int(price * 100),
-                    "description": f"Premium digital product: {product_name}",
+                    "description": description,
                     "published": "true"
                 }
                 

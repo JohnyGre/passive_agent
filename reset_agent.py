@@ -11,26 +11,21 @@ logs_dir = output_dir / "logs"
 def reset():
     print("Cistim agenta pre novy start...")
     
-    # 1. Zmaz vygenerovane produkty
-    if products_dir.exists():
+    # 1. Zmaz cely output adresar
+    if output_dir.exists():
         try:
-            shutil.rmtree(products_dir)
-            products_dir.mkdir(parents=True)
-            print("OK: Priečinok produktov vymazaný.")
+            shutil.rmtree(output_dir)
+            print(f"OK: Adresár '{output_dir}' a jeho obsah vymazaný.")
         except Exception as e:
-            print(f"ERR pri mazani produktov: {e}")
+            print(f"ERR pri mazani adresara '{output_dir}': {e}")
+    
+    # Znovu vytvorime potrebne adresare
+    output_dir.mkdir(parents=True, exist_ok=True)
+    products_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    print("OK: Adresáre 'output', 'products' a 'logs' znovu vytvorené.")
 
-    # 2. Zmaz logy
-    if logs_dir.exists():
-        for item in logs_dir.iterdir():
-            if item.is_file():
-                try:
-                    item.unlink()
-                except Exception as e:
-                    print(f"ERR: Nemôžem zmazať {item.name}: {e}")
-        print("OK: Logy a historia vymazane.")
-
-    # 3. Zmaz __pycache__
+    # 2. Zmaz __pycache__
     for p in base_dir.rglob("__pycache__"):
         try:
             shutil.rmtree(p)

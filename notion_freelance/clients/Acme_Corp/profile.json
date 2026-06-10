@@ -1,0 +1,14 @@
+{
+  "name": "Acme Corp",
+  "email": "contact@acme.com",
+  "project_type": "Web Design",
+  "created_at": "2026-06-09T23:03:56.071322",
+  "status": "Onboarding",
+  "communications": [
+    {
+      "timestamp": "2026-06-09T23:03:56.072526",
+      "medium": "Email",
+      "summary": "Sent contract draft"
+    }
+  ]
+}
