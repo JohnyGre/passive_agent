@@ -167,16 +167,13 @@ class Orchestrator:
                 if GUMROAD_ACCESS_TOKEN: # Ak je token definovaný, pokúsime sa uploadovať
                     log.info("  ⬆️ Nahrávam produkt na Gumroad...")
                     try:
-                        gumroad_result = self.gumroad.publish_product_dir(product_dir, suggested_price)
-                        if gumroad_result and cover_path:
-                            product_id = gumroad_result.get("product_id")
-                            if product_id:
-                                log.info(f"  ⬆️ Nahrávam cover pre produkt {product_id} na Gumroad...")
-                                self.uploader.upload_sync(product_id, cover_path)
-                                log.info("  ✅ Cover úspešne nahraný na Gumroad.")
-                        log.info("  ✅ Produkt úspešne nahraný na Gumroad.")
+                        gumroad_result = self.gumroad.publish_product_dir(product_dir, suggested_price, cover_path)
+                        if gumroad_result:
+                            log.info("  ✅ Produkt úspešne nahraný na Gumroad.")
+                        else:
+                            log.warning("  ⚠️ Produkt sa nenahral na Gumroad.")
                     except Exception as gumroad_err:
-                        log.error(f"  ❌ Gumroad upload zlyhal pre '{product_title}': {gumroad_err}")
+                        log.error(f"  ❌ Gumroad upload zlyhal pre '{product_title}': {gumroad_err}", exc_info=True) # Pridané exc_info
                 else:
                     log.info("  🛒 Gumroad upload je vypnutý (GUMROAD_ACCESS_TOKEN nie je nastavený).")
 

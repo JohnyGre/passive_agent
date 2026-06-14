@@ -1,0 +1,4 @@
+timestamp,url,status_code,title,meta_description
+2026-06-14T12:12:38.758788,https://example.com,200,Example Domain,N/A
+2026-06-14T12:12:38.758802,https://httpbin.org/status/200,503,503 Service Temporarily Unavailable,N/A
+2026-06-14T12:12:38.758804,https://httpbin.org/status/404,503,503 Service Temporarily Unavailable,N/A

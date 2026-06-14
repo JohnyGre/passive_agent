@@ -46,6 +46,8 @@ class CoverAgent:
             
             pipe.enable_attention_slicing()
             pipe.vae.enable_slicing()
+            # Nová optimalizácia pre nízku VRAM
+            pipe.enable_sequential_cpu_offload()
 
             sd_prompt = (
                 f"Professional product cover for '{title}', {style}, "
