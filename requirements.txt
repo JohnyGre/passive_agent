@@ -1,4 +1,5 @@
 httpx
+truststore
 apscheduler
 pytrends
 requests

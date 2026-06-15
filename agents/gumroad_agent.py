@@ -7,6 +7,8 @@ Podporuje automatické spracovanie adresárov produktov a ochranu pred duplicita
 import os
 import math
 import json
+import time
+import uuid
 import logging
 import httpx
 from pathlib import Path
@@ -72,6 +74,79 @@ class GumroadAgent:
         parts.append("<h3>What's inside</h3><ul>" + "".join(f"<li>{x}</li>" for x in includes) + "</ul>")
         parts.append("<p><em>Instant download · Plug &amp; play · Lifetime access.</em></p>")
         return "".join(parts)
+
+    def _build_rich_content(self, manifest: dict, product_name: str, file_id: str) -> list:
+        """Gumroad /edit/content tab zobrazuje rich_content (ProseMirror), nie description."""
+        mk = manifest.get("marketing", {})
+        lead = mk.get("description") or manifest.get("metadata", {}).get("description") or product_name
+        hooks = [h for h in mk.get("social_hooks", []) if h][:2]
+
+        blocks = [{"type": "paragraph", "content": [{"type": "text", "text": lead}]}]
+        for hook in hooks:
+            blocks.append({
+                "type": "paragraph",
+                "content": [{"type": "text", "text": f"• {hook}"}]
+            })
+        blocks.append({
+            "type": "fileEmbed",
+            "attrs": {"id": file_id, "uid": str(uuid.uuid4())}
+        })
+
+        return [{
+            "title": "Your Download",
+            "description": {"type": "doc", "content": blocks}
+        }]
+
+    def _attach_rich_content(self, product_id: str, file_id: str,
+                             manifest: dict, product_name: str) -> bool:
+        """Vyplní Content tab — embed ZIP/DOCX do rich_content stránky."""
+        try:
+            rich_content = self._build_rich_content(manifest, product_name, file_id)
+            log.info(f"Nastavujem rich_content (Content tab) pre produkt {product_id}...")
+            res = self.client.put(
+                f"{GUMROAD_API}/products/{product_id}",
+                json={
+                    "access_token": self.token,
+                    "rich_content": rich_content,
+                    "published": True,
+                },
+                timeout=30.0,
+            )
+            res.raise_for_status()
+            if res.json().get("success"):
+                log.info("✅ Rich content (Content tab) nastavený.")
+                return True
+            log.warning(f"⚠️ Rich content zlyhal: {res.text}")
+        except Exception as e:
+            log.warning(f"⚠️ Výnimka pri nastavovaní rich_content: {e}")
+        return False
+
+    def repair_product_content(self, product_id: str, manifest: dict | None = None,
+                               product_name: str = "Product") -> bool:
+        """Opraví existujúci produkt — doplní rich_content ak chýba alebo je prázdny."""
+        try:
+            res = self.client.get(
+                f"{GUMROAD_API}/products/{product_id}",
+                params={"access_token": self.token},
+                timeout=20.0,
+            )
+            res.raise_for_status()
+            product = res.json().get("product", {})
+            files = product.get("files") or []
+            if not files:
+                log.warning(f"Produkt {product_id} nemá žiadne súbory — rich_content sa nedá opraviť.")
+                return False
+
+            existing = product.get("rich_content") or []
+            if existing:
+                log.info(f"Produkt {product.get('name')} už má rich_content ({len(existing)} strán).")
+                return True
+
+            name = product.get("name") or product_name
+            return self._attach_rich_content(product_id, files[0]["id"], manifest or {}, name)
+        except Exception as e:
+            log.error(f"Chyba pri repair_product_content: {e}", exc_info=True)
+            return False
 
     def _s3_presign_upload(self, file_path: str) -> str | None:
         """
@@ -192,6 +267,31 @@ class GumroadAgent:
             log.warning(f"⚠️ Výnimka pri priraďovaní coveru: {e}")
         return False
 
+    def _ensure_published(self, product_id: str, url: str) -> bool:
+        """Gumroad API často nechá produkt v drafte — overíme a vynútime publish."""
+        for attempt in (1, 2):
+            time.sleep(1.5 if attempt == 1 else 2.0)
+            pub_res = self.client.put(
+                f"{GUMROAD_API}/products/{product_id}",
+                data={"access_token": self.token, "published": "true"}
+            )
+            if pub_res.json().get("success"):
+                log.info(f"✅ Produkt published ({attempt}. PUT).")
+            else:
+                log.warning(f"⚠️ {attempt}. PUT neúspešný: {pub_res.text}")
+
+            time.sleep(2.0)
+            verify = self.client.get(
+                f"{GUMROAD_API}/products/{product_id}",
+                params={"access_token": self.token}
+            )
+            if verify.json().get("product", {}).get("published"):
+                log.info("✅ Verifikácia OK — produkt je live.")
+                return True
+
+        log.warning(f"⚠️ Produkt môže byť stále draft — skontroluj manuálne: {url}")
+        return False
+
     def publish_product_dir(self, product_dir: Path,
                             price: float = PRODUCT_PRICE_USD,
                             cover_path: Path | str | None = None) -> dict | None:
@@ -298,6 +398,15 @@ class GumroadAgent:
                 # 5. Priradenie coveru po vytvorení produktu
                 if catbox_url:
                     self._attach_cover_to_product(p_id, catbox_url)
+
+                # 6. Content tab — rich_content s embedovaným súborom
+                product_files = resp_data.get("product", {}).get("files") or []
+                if product_files:
+                    self._attach_rich_content(p_id, product_files[0]["id"], manifest, product_name)
+                else:
+                    log.warning("⚠️ Produkt nemá súbory v odpovedi — Content tab zostane prázdny.")
+
+                self._ensure_published(p_id, url)
 
                 log.info(f"🚀 ÚSPECH! Produkt vytvorený a súbory nahrané: {url}")
 

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "_gumroad_guid",
+    "value": "d13bd79a-2ed4-4530-a873-82f1424c3dc8",
+    "domain": ".gumroad.com",
+    "path": "/",
+    "expires": 1816105863.988769,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_ga_6LJN6D94N6",
+    "value": "GS2.1.s1781545865$o1$g0$t1781545865$j60$l0$h0",
+    "domain": ".gumroad.com",
+    "path": "/",
+    "expires": 1816105865.257199,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ga",
+    "value": "GA1.1.2103420475.1781545865",
+    "domain": ".gumroad.com",
+    "path": "/",
+    "expires": 1816105865.257782,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "remember_user_token",
+    "value": "eyJfcmFpbHMiOnsibWVzc2FnZSI6Ilcxc3lOelkwTlRNMU5sMHNJaVF5WVNReE1TUjNZa2hKU0VRdkwwVXZhV0U1VlV0RlRFb3pNRTlsSWl3aU1UYzRNVFUwTlRnNE5DNHhOamt6TlRRM0lsMD0iLCJleHAiOiIyMDI2LTA3LTE1VDE3OjUxOjI0LjE2OVoiLCJwdXIiOiJjb29raWUucmVtZW1iZXJfdXNlcl90b2tlbiJ9fQ%3D%3D--818553aa8d90f37bfb728bf5799547e071eed65c",
+    "domain": ".gumroad.com",
+    "path": "/",
+    "expires": 1784137884.247311,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "XSRF-TOKEN",
+    "value": "JPVC84RYnvzfoKOGufhgDM-u17Jp41Jtj6MgE-z6i4m-GwV93ddBJtqYS9JGbgW5RXTdsQrhL5rNIbvzLZfWgQ",
+    "domain": "gumroad.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_gumroad_app_session",
+    "value": "QXwkOGWLuFUtJeHp75z6kOokJUbqluhRbLTkWDuIu2rshAYpUhvRGsaCPJntMyskYPFnkh4z2ygHxgBDtNd3aBDkYkpQoQKCZQHpgUInX05yHrezNpUsQL0ln%2BScDrwREr31vnNDlAJEf0uUco9S1DaN5PJt8AWQsDS2P8VBGBfQLd0NATeZ9WZOzW2FRKVuCxx%2BV1UEb%2FncAmE5KAl%2FKYX8OEpH9zuNKdtUoG9xwaeMT%2F783KPmZhsaIYoqe4ZHy07aap59RkJQ18ge8aJB7cHuDDliydrLnIzo9H0lhl0ThirlDlxmyTgOwVshS1dlI22dy%2F7eesGGjnx0z8S1sp%2B7DaiIRykAsKvzIgkB18ATkIdUClIkd1%2FS3IqeQ6EknoxBTgT8RVENuOn7Hdz8q4DPsWgekg%2Bp6Gthq0SdpZWfCYRvI19UM0MpYmUD%2BWyJAJQl7FbpXndpcyLZa1r56qoPCcTR1gfrWR86UznYGDDsBQcYoAiyWYEyq4%2BqZoFZqFOOgtxbal5UB%2BPPxXy%2FYF67abGcHjDR1tgW%2B5NdQ9hqRVU3AGI%2BQ%2BMpjnivuMOIfROvC6ISmVieHYDR54xye7ILnVouFw%3D%3D--pCyzU2ddCInUDStQ--VGkfp7ttO9yFNTRvjM4Xxw%3D%3D",
+    "domain": ".gumroad.com",
+    "path": "/",
+    "expires": 1784137884.760257,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  }
+]

@@ -5,6 +5,13 @@
 import os
 from pathlib import Path
 
+# Windows: Python nevidí systémové CA → Gumroad/HTTPS zlyhá bez truststore
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 # ── Načítanie .env ────────────────────────────
 BASE_DIR = Path(__file__).parent
 env_path = BASE_DIR / ".env"
