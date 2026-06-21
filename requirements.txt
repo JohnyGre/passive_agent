@@ -2,9 +2,10 @@ httpx
 truststore
 apscheduler
 pytrends
-requests
+requests==2.31.0
 python-docx
 diffusers
 transformers
 accelerate
 playwright
+beautifulsoup4==4.12.2

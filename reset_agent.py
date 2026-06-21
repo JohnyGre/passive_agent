@@ -25,7 +25,39 @@ def reset():
     logs_dir.mkdir(parents=True, exist_ok=True)
     print("OK: Adresáre 'output', 'products' a 'logs' znovu vytvorené.")
 
-    # 2. Zmaz __pycache__
+    # 2. Zmaz root-level CSV, DB, TXT správy a dočasné súbory
+    files_to_remove = [
+        "seo_report.db",
+        "seo_report.csv",
+        "leads.csv",
+        "results.csv",
+        "gpt_interactions.csv",
+        "notion_clients.json",
+        "notion_os.json",
+        "optimized_prompts.json",
+        "prompt_optimization_results.json",
+        "seo_reports.json",
+    ]
+
+    for filename in files_to_remove:
+        f_path = base_dir / filename
+        if f_path.exists():
+            try:
+                f_path.unlink()
+                print(f"OK: Súbor '{filename}' vymazaný.")
+            except Exception as e:
+                print(f"ERR pri mazaní súboru '{filename}': {e}")
+
+    # Mazanie vzorovaných reportov (napr. seo_report_*.txt alebo *.csv)
+    for p in base_dir.glob("seo_report_*.*"):
+        if p.is_file():
+            try:
+                p.unlink()
+                print(f"OK: Vzorovaný report '{p.name}' vymazaný.")
+            except Exception:
+                pass
+
+    # 3. Zmaz __pycache__
     for p in base_dir.rglob("__pycache__"):
         try:
             shutil.rmtree(p)

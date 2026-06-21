@@ -36,27 +36,53 @@ The JSON must follow this exact structure:
   }}
 }}
 
-### CRITICAL RULES FOR CODE:
-1. DO NOT wrap Python code in markdown backticks (```). Write raw Python code directly as the string value.
-2. Use ONLY these libraries: os, json, re, datetime, smtplib, sqlite3, subprocess, tempfile, logging, httpx, requests, csv, pathlib, argparse, hashlib, urllib, apscheduler
-3. NEVER use flask, django, fastapi, notion_client, googlesearch, or any unlisted library.
-4. Every function MUST have a docstring and type hints.
-5. Code MUST include try/except error handling.
-6. In JSON strings, use \\n for newlines inside code content.
+### CRITICAL REQUIREMENT — PRODUCTION-READY CODE ONLY:
+You are writing code for a PAID, production-ready tool that real customers will download and run.
+You MUST write fully functional code that performs REAL operations — no fakes, no simulations.
 
-### EXAMPLE OF CORRECT OUTPUT:
+### ABSOLUTELY FORBIDDEN PATTERNS (your code will be REJECTED if ANY are found):
+- time.sleep() to simulate/fake API calls or processing delays
+- Hardcoded/mock data pretending to be API responses (e.g. return {{"status": "ok", "data": ["fake1"]}})
+- Comments containing: "simulated", "mock", "placeholder", "example only", "demo", "dummy", "fake"
+- Functions that return static strings/dicts/lists instead of making real HTTP requests
+- Using random.choice() or random.sample() to fake scraped/generated results
+- print() as the only output mechanism (use logging module + return values)
+- Empty or no-op functions that pretend to do work
+- Using 'example.com' or any placeholder URL instead of real, configurable targets
+
+### MANDATORY REQUIREMENTS for scripts that involve web/API/data:
+- MUST use requests.get()/requests.post() or httpx.get()/httpx.post() with REAL URLs
+- MUST parse HTML with BeautifulSoup: from bs4 import BeautifulSoup; soup = BeautifulSoup(resp.text, "html.parser")
+- MUST handle HTTP errors: check response.status_code, use try/except for ConnectionError, Timeout
+- MUST include User-Agent header in HTTP requests
+- MUST have configurable target URLs via argparse arguments or config variables (NOT hardcoded)
+- MUST include requests>=2.31.0 and beautifulsoup4>=4.12.2 in the requirements list
+
+### MANDATORY REQUIREMENTS for scripts that involve AI/LLM:
+- If the script needs AI capabilities, MUST connect to a real API endpoint
+- Use httpx or requests to call local Ollama (http://localhost:11434/api/generate) or OpenAI-compatible API
+- The user must only need to set their API URL/key — no simulated AI responses
+
+### GENERAL CODE QUALITY RULES:
+1. Use ONLY standard Python libraries (os, json, re, datetime, smtplib, sqlite3, subprocess, tempfile, logging, csv, argparse, hashlib, urllib) or these external libraries: httpx, apscheduler, pytrends, requests, python-docx, beautifulsoup4.
+2. DO NOT use flask, django, fastapi, notion_client, googlesearch, or any unlisted library.
+3. Every function MUST have a docstring and type hints.
+4. Code MUST include try/except error handling.
+5. In JSON strings, use \\n for newlines inside code content.
+6. DO NOT wrap Python code in markdown backticks (```). Write raw Python code directly as the string value.
+
+### EXAMPLE OF CORRECT OUTPUT (note: real HTTP calls, real parsing, real error handling):
 {{
-  "metadata": {{"title": "Python Automation Kit", "slug": "python-auto-kit", "description": "Professional automation toolkit"}},
-  "marketing": {{"description": "Best Python automation guide", "social_hooks": ["Automate everything!", "Save 10 hours/week"]}},
+  "metadata": {{"title": "Python Web Scraper Kit", "slug": "python-scraper-kit", "description": "Professional web scraping toolkit"}},
+  "marketing": {{"description": "Production-ready Python scraper", "social_hooks": ["Scrape any website!", "Save hours of manual work"]}},
   "content_structure": [
     {{"type": "heading", "level": 1, "text": "Introduction"}},
-    {{"type": "text", "text": "This guide covers practical automation techniques."}},
-    {{"type": "prompt", "title": "Automation Prompt", "content": "Create a Python script that automates daily reporting."}},
-    {{"type": "code", "title": "Report Generator", "language": "python", "content": "import json\\nimport logging\\n\\nlog = logging.getLogger(__name__)\\n\\ndef generate_report(data: dict) -> str:\\n    \\"\\"\\"Generate a formatted report from data.\\"\\"\\"\\n    try:\\n        return json.dumps(data, indent=2)\\n    except Exception as e:\\n        log.error(f\\"Report failed: {{e}}\\")\\n        return \\"\\"\\n"}}
+    {{"type": "text", "text": "This toolkit provides real, working web scrapers."}},
+    {{"type": "code", "title": "Web Scraper", "language": "python", "content": "import requests\\nimport logging\\nfrom bs4 import BeautifulSoup\\n\\nlog = logging.getLogger(__name__)\\n\\ndef scrape_page(url: str) -> list[dict]:\\n    \\\"\\\"\\\"Scrape data from a given URL using requests + BeautifulSoup.\\\"\\\"\\\"\\n    headers = {{\\\"User-Agent\\\": \\\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0\\\"}}\\n    try:\\n        resp = requests.get(url, headers=headers, timeout=15)\\n        resp.raise_for_status()\\n        soup = BeautifulSoup(resp.text, \\\"html.parser\\\")\\n        items = []\\n        for el in soup.select(\\\"h2, h3, p\\\"):\\n            items.append({{\\\"tag\\\": el.name, \\\"text\\\": el.get_text(strip=True)}})\\n        return items\\n    except requests.RequestException as e:\\n        log.error(f\\\"HTTP error: {{e}}\\\")\\n        return []\\n"}}
   ],
   "pro_kit": {{
-    "scripts": [{{"name": "report_tool.py", "content": "import json\\nimport logging\\n\\nlog = logging.getLogger(__name__)\\n\\ndef main() -> None:\\n    \\"\\"\\"Main entry point for the report tool.\\"\\"\\"\\n    try:\\n        data = {{\\"status\\": \\"ok\\"}}\\n        print(json.dumps(data))\\n    except Exception as e:\\n        log.error(f\\"Error: {{e}}\\")\\n\\nif __name__ == \\"__main__\\":\\n    main()", "description": "Standalone report generation tool"}}],
-    "requirements": ["httpx"]
+    "scripts": [{{"name": "scraper_tool.py", "content": "import argparse\\nimport requests\\nimport logging\\nimport json\\nfrom bs4 import BeautifulSoup\\n\\nlog = logging.getLogger(__name__)\\nlogging.basicConfig(level=logging.INFO)\\n\\ndef scrape(url: str) -> list[dict]:\\n    \\\"\\\"\\\"Fetch and parse a web page, returning structured data.\\\"\\\"\\\"\\n    headers = {{\\\"User-Agent\\\": \\\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0\\\"}}\\n    try:\\n        resp = requests.get(url, headers=headers, timeout=15)\\n        resp.raise_for_status()\\n        soup = BeautifulSoup(resp.text, \\\"html.parser\\\")\\n        results = []\\n        for el in soup.select(\\\"h2, h3, p\\\"):\\n            results.append({{\\\"tag\\\": el.name, \\\"text\\\": el.get_text(strip=True)}})\\n        log.info(f\\\"Scraped {{len(results)}} elements from {{url}}\\\")\\n        return results\\n    except requests.RequestException as e:\\n        log.error(f\\\"Failed to scrape {{url}}: {{e}}\\\")\\n        return []\\n\\ndef main() -> None:\\n    \\\"\\\"\\\"CLI entry point for the scraper tool.\\\"\\\"\\\"\\n    parser = argparse.ArgumentParser(description=\\\"Web Scraper Tool\\\")\\n    parser.add_argument(\\\"--url\\\", required=True, help=\\\"Target URL to scrape\\\")\\n    parser.add_argument(\\\"--output\\\", default=\\\"results.json\\\", help=\\\"Output file path\\\")\\n    args = parser.parse_args()\\n    try:\\n        data = scrape(args.url)\\n        with open(args.output, \\\"w\\\", encoding=\\\"utf-8\\\") as f:\\n            json.dump(data, f, ensure_ascii=False, indent=2)\\n        log.info(f\\\"Results saved to {{args.output}}\\\")\\n    except Exception as e:\\n        log.error(f\\\"Error: {{e}}\\\")\\n\\nif __name__ == \\\"__main__\\\":\\n    main()", "description": "Production-ready web scraper with CLI interface"}}],
+    "requirements": ["requests>=2.31.0", "beautifulsoup4>=4.12.2"]
   }}
 }}
 """

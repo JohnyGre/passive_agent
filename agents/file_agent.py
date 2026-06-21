@@ -317,7 +317,8 @@ class FileAgent:
         return unresolved
 
     def _detect_requirements(self, product: dict, blocks: list) -> list:
-        """Odvodí requirements zo skutočných importov + deklarovaných (filtruje stdlib a lokálne)."""
+        """Odvodí requirements zo skutočných importov + deklarovaných (filtruje stdlib a lokálne).
+        Navyše: ak kód obsahuje requests/bs4, vynúti ich zaradenie do requirements."""
         stdlib = self._stdlib()
         basenames = {b["name"][:-3] for b in blocks}
         found = set()
@@ -339,7 +340,18 @@ class FileAgent:
             pkgs.append(_PKG_MAP.get(mod, mod))
 
         declared = list(product.get("pro_kit", {}).get("requirements", []))
-        return self._filter_requirements(declared + pkgs)
+        merged = self._filter_requirements(declared + pkgs)
+
+        # ── ENFORCEMENT: Povinné balíky pre HTTP/scraping kód ──
+        merged_lower = {re.split(r"[<>=!\[ ]", r.strip(), maxsplit=1)[0].strip().lower() for r in merged}
+        if 'requests' in found and 'requests' not in merged_lower:
+            merged.append("requests>=2.31.0")
+        if ('bs4' in found or 'beautifulsoup4' in merged_lower) and 'beautifulsoup4' not in merged_lower:
+            merged.append("beautifulsoup4>=4.12.2")
+        if 'httpx' in found and 'httpx' not in merged_lower:
+            merged.append("httpx")
+
+        return merged
 
     def _find_entry_script(self, blocks: list):
         """Nájde CLI vstupný skript (preferuje argparse + __main__)."""

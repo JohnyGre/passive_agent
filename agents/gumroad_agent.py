@@ -1,6 +1,6 @@
 """
-GUMROAD AGENT - PRO VERSION (WITH FOLDER PUBLISHING AND S3 MULTIPART UPLOADS)
-Rieši AWS S3 Presign Multipart Upload pre veľké ZIP súbory, aby sme obišli limity Gumroad API.
+GUMROAD AGENT - PRO VERSION (WITH FOLDER PUBLISHING AND DIRECT FILE UPLOAD)
+Nahrává súbory priamo na Gumroad cez multipart/form-data - bez S3 presign hackov.
 Podporuje automatické spracovanie adresárov produktov a ochranu pred duplicitami.
 """
 
@@ -121,6 +121,22 @@ class GumroadAgent:
             log.warning(f"⚠️ Výnimka pri nastavovaní rich_content: {e}")
         return False
 
+    def _ensure_published(self, product_id: str, url: str) -> None:
+        """Zaistí, že produkt je zverejnený (published=true)."""
+        try:
+            res = self.client.put(
+                f"{GUMROAD_API}/products/{product_id}",
+                data={
+                    "access_token": self.token,
+                    "published": "true"
+                },
+                timeout=30.0
+            )
+            res.raise_for_status()
+            log.info(f"Produkt {product_id} úspešne publikovaný (ensure_published).")
+        except Exception as e:
+            log.warning(f"⚠️ Nepodarilo sa explicitne publikovať produkt {product_id}: {e}")
+
     def repair_product_content(self, product_id: str, manifest: dict | None = None,
                                product_name: str = "Product") -> bool:
         """Opraví existujúci produkt — doplní rich_content ak chýba alebo je prázdny."""
@@ -177,7 +193,7 @@ class GumroadAgent:
         if not parts and "url" in presign_data:
             log.info("Súbor je malý, Gumroad vrátil priamy S3 link. Nahrávam celý naraz...")
             with open(file_path, "rb") as f:
-                s3_res = self.client.put(presign_data["url"], content=f.read(), headers={})
+                s3_res = self.client.put(presign_data["url"], content=f.read(), headers={}) # Pridané headers={}
                 s3_res.raise_for_status()
         elif parts:
             log.info(f"Fáza 2: Rozsekávam a nahrávam {len(parts)} častí priamo na S3...")
@@ -190,7 +206,7 @@ class GumroadAgent:
                     chunk_data = f.read(chunk_size)
                     
                     # AWS S3 vyžaduje striktne PUT požiadavku, žiadne extra hlavičky!
-                    s3_res = self.client.put(presigned_url, content=chunk_data, headers={})
+                    s3_res = self.client.put(presigned_url, content=chunk_data, headers={}) # Pridané headers={}
                     s3_res.raise_for_status()
                     etag = s3_res.headers.get("ETag", "").strip('"')
                     completed_parts.append((part_number, etag))
@@ -217,7 +233,7 @@ class GumroadAgent:
         
         fin_url = complete_data.get("url") or complete_data.get("file_url")
         if not fin_url:
-            raise ValueError(f"Complete endpoint nevrátil URL súboru: {complete_data}")
+             raise ValueError(f"Complete endpoint nevrátil URL súboru: {complete_data}")
              
         log.info(f"✅ Súbor pripravený v cloude: {fin_url}")
         return fin_url
@@ -236,133 +252,156 @@ class GumroadAgent:
                     files={"fileToUpload": f},
                     timeout=30.0
                 )
-            if res.status_code == 200:
-                url = res.text.strip()
-                if url.startswith("http"):
-                    log.info(f"✅ Cover úspešne nahratý na Catbox: {url}")
-                    return url
-            log.warning(f"⚠️ Nahratie na Catbox zlyhalo s kódom {res.status_code}: {res.text}")
+            if res.status_code == 200 and res.text.strip().startswith("http"):
+                log.info(f"✅ Cover nahratý na Catbox: {res.text.strip()}")
+                return res.text.strip()
+            log.warning(f"⚠️ Catbox zlyhal ({res.status_code}): {res.text}")
         except Exception as e:
-            log.warning(f"⚠️ Výnimka pri nahrávaní na Catbox: {e}")
+            log.warning(f"⚠️ Výnimka pri Catbox uploade: {e}")
         return None
 
     def _attach_cover_to_product(self, product_id: str, cover_url: str) -> bool:
         """Priradí cover k produktu cez Gumroad API."""
         try:
-            log.info(f"Priraďujem cover URL k produktu {product_id}...")
+            log.info(f"Priraďujem cover k produktu {product_id}...")
             res = self.client.post(
                 f"{GUMROAD_API}/products/{product_id}/covers",
-                data={
-                    "access_token": self.token,
-                    "url": cover_url
-                }
+                data={"access_token": self.token, "url": cover_url}
             )
-            if res.status_code in [200, 201]:
-                data = res.json()
-                if data.get("success"):
-                    log.info("✅ Cover úspešne priradený k produktu!")
-                    return True
+            if res.status_code in [200, 201] and res.json().get("success"):
+                log.info("✅ Cover priradený!")
+                return True
             log.warning(f"⚠️ Priradenie coveru zlyhalo: {res.text}")
         except Exception as e:
             log.warning(f"⚠️ Výnimka pri priraďovaní coveru: {e}")
-        return False
-
-    def _ensure_published(self, product_id: str, url: str) -> bool:
-        """Gumroad API často nechá produkt v drafte — overíme a vynútime publish."""
-        for attempt in (1, 2):
-            time.sleep(1.5 if attempt == 1 else 2.0)
-            pub_res = self.client.put(
-                f"{GUMROAD_API}/products/{product_id}",
-                data={"access_token": self.token, "published": "true"}
-            )
-            if pub_res.json().get("success"):
-                log.info(f"✅ Produkt published ({attempt}. PUT).")
-            else:
-                log.warning(f"⚠️ {attempt}. PUT neúspešný: {pub_res.text}")
-
-            time.sleep(2.0)
-            verify = self.client.get(
-                f"{GUMROAD_API}/products/{product_id}",
-                params={"access_token": self.token}
-            )
-            if verify.json().get("product", {}).get("published"):
-                log.info("✅ Verifikácia OK — produkt je live.")
-                return True
-
-        log.warning(f"⚠️ Produkt môže byť stále draft — skontroluj manuálne: {url}")
         return False
 
     def publish_product_dir(self, product_dir: Path,
                             price: float = PRODUCT_PRICE_USD,
                             cover_path: Path | str | None = None) -> dict | None:
         """
-        Publikuje produkt z lokálneho adresára, automaticky vyhľadá a nahrá
-        hlavný ZIP/súbor cez S3 a prípadný cover.
+        Publikuje Basic aj Pro verzie produktu ako samostatné položky na Gumroade.
         """
         product_dir = Path(product_dir)
         
         # Ochrana proti duplicite
         if product_dir.name in self._published:
-            log.warning(f"⏭️ Už publikovaný: {self._published[product_dir.name]}")
-            return self._published[product_dir.name]
+            pub_info = self._published[product_dir.name]
+            if "product_id" in pub_info or ("basic" in pub_info and "pro" in pub_info):
+                log.warning(f"⏭️ Už publikovaný: {pub_info}")
+                return pub_info
 
-        # 1. Nájdi hlavný súbor - preferuj PRO ZIP, potom Basic ZIP, potom DOCX, potom PDF, potom TXT
+        # Zisti cesty k súborom
         pro_dir = product_dir / "v2_PRO_Automation_Kit"
         diy_dir = product_dir / "v1_DIY_Basic"
 
-        main_file = None
+        zip_file = None
         if pro_dir.exists():
             zip_files = list(pro_dir.glob("*.zip"))
             if zip_files:
-                main_file = zip_files[0]
-            else:
-                docx_files = list(pro_dir.glob("*.docx"))
-                if docx_files:
-                    main_file = docx_files[0]
-        
-        if not main_file and diy_dir.exists():
+                zip_file = zip_files[0]
+
+        docx_file = None
+        if diy_dir.exists():
             docx_files = list(diy_dir.glob("*.docx"))
             if docx_files:
-                main_file = docx_files[0]
+                docx_file = docx_files[0]
+        if not docx_file and pro_dir.exists():
+            docx_files = list(pro_dir.glob("*.docx"))
+            if docx_files:
+                docx_file = docx_files[0]
 
-        if not main_file:
-            log.warning(f"Žiadny súbor v {product_dir.name}")
+        if not zip_file and not docx_file:
+            log.warning(f"Žiadny ZIP ani DOCX súbor v {product_dir.name}")
             return None
 
-        # Extrahuj meno produktu + bohatý popis z data.json
-        product_name = product_dir.name.split("_", 2)[-1].replace("_", " ").title()
+        # Názov a manifest
+        base_product_name = product_dir.name.split("_", 2)[-1].replace("_", " ").title()
         manifest = {}
         data_json = product_dir / "data.json"
         if data_json.exists():
             try:
                 manifest = json.loads(data_json.read_text(encoding="utf-8"))
                 meta = manifest.get("metadata", {})
-                product_name = meta.get("title") or manifest.get("title") or product_name
+                base_product_name = meta.get("title") or manifest.get("title") or base_product_name
             except Exception:
                 pass
 
-        description = self._build_description(manifest, product_name)
+        # Vypočítaj ceny pre obe verzie
+        if price is None:
+            price = PRODUCT_PRICE_USD
+        else:
+            try:
+                price = float(price)
+            except ValueError:
+                price = PRODUCT_PRICE_USD
 
-        log.info(f"Nahrávam {main_file.name} na Gumroad ({product_name})...")
+        # Ochrana pred prehnanými cenami:
+        # Horná hranica ceny pre Pro verziu je 14.99 USD, pre Basic verziu 5.99 USD
+        pro_price = min(price, 14.99)
+        
+        # Výpočet ceny pre Basic verziu na základe Pro ceny
+        if pro_price >= 12.0:
+            basic_price = 4.99
+        elif pro_price >= 7.0:
+            basic_price = 3.99
+        else:
+            basic_price = 2.99
 
+        # Nahraj cover na Catbox raz
+        catbox_url = None
+        actual_cover_path = cover_path or (product_dir / "cover.jpg")
+        if actual_cover_path:
+            actual_cover_path = Path(actual_cover_path)
+            if actual_cover_path.exists():
+                catbox_url = self._upload_cover_to_catbox(actual_cover_path)
+
+        result_info = {}
+
+        # 1. NAHRATIE BASIC VERZIE (DOCX)
+        if docx_file:
+            log.info(f"Nahrávam Basic verziu: {docx_file.name} (${basic_price})...")
+            basic_info = self._publish_single_item(
+                file_path=docx_file,
+                product_name=f"{base_product_name} (Basic Guide)",
+                price=basic_price,
+                description=self._build_description(manifest, f"{base_product_name} (Basic Guide)"),
+                manifest=manifest,
+                catbox_url=catbox_url
+            )
+            if basic_info:
+                result_info["basic"] = basic_info
+
+        # 2. NAHRATIE PRO VERZIE (ZIP)
+        if zip_file:
+            log.info(f"Nahrávam Pro verziu: {zip_file.name} (${pro_price})...")
+            pro_info = self._publish_single_item(
+                file_path=zip_file,
+                product_name=f"{base_product_name} (PRO Automation Kit)",
+                price=pro_price,
+                description=self._build_description(manifest, f"{base_product_name} (PRO Automation Kit)"),
+                manifest=manifest,
+                catbox_url=catbox_url
+            )
+            if pro_info:
+                result_info["pro"] = pro_info
+
+        if result_info:
+            self._published[product_dir.name] = result_info
+            self._save_published()
+            return result_info
+
+        return None
+
+    def _publish_single_item(self, file_path: Path, product_name: str, price: float,
+                             description: str, manifest: dict, catbox_url: str | None) -> dict | None:
         try:
-            # 1. Najskôr prepasírujeme ZIP/súbor cez S3
-            file_url = self._s3_presign_upload(str(main_file))
+            file_url = self._s3_presign_upload(str(file_path))
             if not file_url:
-                log.error(f"Nepodarilo sa nahrať hlavný súbor {main_file.name} cez S3 presign flow.")
+                log.error(f"Nepodarilo sa nahrať súbor {file_path.name} cez S3 presign flow.")
                 return None
 
-            # 2. Cena musí byť v centoch
-            if price is None:
-                price = PRODUCT_PRICE_USD
-            else:
-                try:
-                    price = float(price)
-                except ValueError:
-                    price = PRODUCT_PRICE_USD
             price_cents = int(price * 100)
-
-            # 3. Payload pre vytvorenie produktu
             payload = {
                 "access_token": self.token,
                 "name": product_name,
@@ -372,58 +411,32 @@ class GumroadAgent:
                 "files[][url]": file_url
             }
 
-            # 4. Príprava Cover obrázku (ak je k dispozícii) - UPLOAD NA CATBOX
-            catbox_url = None
-            actual_cover_path = cover_path or (product_dir / "cover.jpg")
-            if actual_cover_path:
-                actual_cover_path = Path(actual_cover_path)
-                if actual_cover_path.exists():
-                    catbox_url = self._upload_cover_to_catbox(actual_cover_path)
-                    # NEPRIDÁVAJ thumbnail_url do počiatočného payloadu
-
-            log.info(f"Vytváram finálny produkt '{product_name}' s priradeným súborom "
-                     f"(a coverom, ak bude priradený)...")
-            
             res = self.client.post(
                 f"{GUMROAD_API}/products",
                 data=payload
             )
             res.raise_for_status()
-
             resp_data = res.json()
+
             if resp_data.get("success"):
                 p_id = resp_data["product"]["id"]
                 url = resp_data["product"]["short_url"]
 
-                # 5. Priradenie coveru po vytvorení produktu
                 if catbox_url:
                     self._attach_cover_to_product(p_id, catbox_url)
 
-                # 6. Content tab — rich_content s embedovaným súborom
                 product_files = resp_data.get("product", {}).get("files") or []
                 if product_files:
                     self._attach_rich_content(p_id, product_files[0]["id"], manifest, product_name)
-                else:
-                    log.warning("⚠️ Produkt nemá súbory v odpovedi — Content tab zostane prázdny.")
 
                 self._ensure_published(p_id, url)
-
-                log.info(f"🚀 ÚSPECH! Produkt vytvorený a súbory nahrané: {url}")
-
-                result = {"product_id": p_id, "url": url}
-                self._published[product_dir.name] = result
-                self._save_published()
-                return result
+                log.info(f"🚀 Úspešne publikované: {product_name} -> {url} (${price})")
+                return {"product_id": p_id, "url": url, "price": price}
             else:
-                err_msg = resp_data.get('message', 'Unknown error')
-                log.error(f"❌ Chyba pri finalizácii produktu: {err_msg}")
-                if resp_data.get('errors'):
-                    log.error(f"Detaily: {resp_data['errors']}")
-                return None
-
+                log.error(f"Chyba pri vytváraní položky {product_name}: {resp_data.get('message')}")
         except Exception as e:
-            log.error(f"Kritická chyba v GumroadAgentovi pri publish_product_dir: {e}", exc_info=True)
-            return None
+            log.error(f"Kritická chyba pri _publish_single_item pre {product_name}: {e}", exc_info=True)
+        return None
 
     def publish_all_pending(self) -> list:
         """Publikuj všetky produkty, ktoré ešte nie sú na Gumroade."""
@@ -432,27 +445,14 @@ class GumroadAgent:
             return []
 
         results = []
-        product_dirs = [d for d in PRODUCTS_DIR.iterdir() if d.is_dir()]
-
-        if not product_dirs:
-            log.info("Žiadne produkty v adresári")
-            return []
-
-        for product_dir in sorted(product_dirs):
-            product_name = product_dir.name
-
-            # Preskočiť ak je už publikovaný
-            if product_name in self._published:
-                log.debug(f"⏭️  Už publikovaný: {self._published[product_dir.name]}")
+        for product_dir in sorted(d for d in PRODUCTS_DIR.iterdir() if d.is_dir()):
+            if product_dir.name in self._published:
+                log.debug(f"⏭️ Preskočený: {product_dir.name}")
                 continue
-
-            log.info(f"Publikujem: {product_name}")
-            # Tu by sme potrebovali cover_path, ak by sa volalo publish_all_pending
-            # Pre jednoduchosť to zatiaľ necháme tak, keďže sa zameriavame na job_generate_products
+            log.info(f"Publikujem: {product_dir.name}")
             result = self.publish_product_dir(product_dir)
             if result:
                 results.append(result)
-
         return results
 
     def close(self):

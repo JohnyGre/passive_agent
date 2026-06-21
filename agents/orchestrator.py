@@ -80,7 +80,34 @@ class Orchestrator:
             log.warning("❌ Žiadne trendy k spracovaniu.")
             return
 
-        sample = random.sample(self._current_trends, min(PRODUCTS_PER_DAY, len(self._current_trends)))
+        # Získaj všetky už vygenerované safe názvy tém z priečinka
+        from config import PRODUCTS_DIR
+        existing_safes = set()
+        if PRODUCTS_DIR.exists():
+            for d in PRODUCTS_DIR.iterdir():
+                if d.is_dir():
+                    # Zložky sú pomenované YYYYMMDD_HHMMSS_safe_name
+                    parts = d.name.split("_", 2)
+                    if len(parts) >= 3:
+                        existing_safes.add(parts[2].lower())
+                    else:
+                        existing_safes.add(d.name.lower())
+
+        # Vyfiltruj trendy, ktoré už boli vygenerované
+        filtered_trends = []
+        for trend in self._current_trends:
+            topic = trend["keyword"]
+            safe_topic = self.files._safe_filename(topic).lower()
+            if safe_topic in existing_safes:
+                log.info(f"⏭️ Preskakujem už vygenerovanú tému (duplicita): {topic}")
+                continue
+            filtered_trends.append(trend)
+
+        if not filtered_trends:
+            log.warning("❌ Všetky dostupné trendy už boli vygenerované (žiadne nové témy na spracovanie).")
+            return
+
+        sample = random.sample(filtered_trends, min(PRODUCTS_PER_DAY, len(filtered_trends)))
         product_types = ["mini_guide", "prompt_pack"]
 
         for i, trend in enumerate(sample):
@@ -190,16 +217,39 @@ class Orchestrator:
         import httpx
         from config import OLLAMA_URL, OLLAMA_MODEL
 
-        fix_prompt = f"""Fix this Python code. The following issues were found:
+        fix_prompt = f"""CRITICAL: Fix this Python code. The following issues were found:
 {chr(10).join(f'- {i}' for i in issues)}
 
+⚠️ THE PREVIOUS VERSION WAS REJECTED. Common reasons for rejection:
+- time.sleep() used to simulate API calls instead of making real HTTP requests
+- Hardcoded/mock data returned instead of actually fetching from the web
+- random.choice() used to fake scraped results
+- Comments like "# simulated", "# mock", "# placeholder"
+- Functions returning static dicts/lists without any real HTTP call
+
+ABSOLUTELY FORBIDDEN PATTERNS (your code will be REJECTED AGAIN if ANY are found):
+- time.sleep() to simulate/fake API calls or processing delays
+- Hardcoded/mock data pretending to be API responses
+- Comments containing: "simulated", "mock", "placeholder", "example only", "demo", "dummy", "fake"
+- Functions that return static strings/dicts/lists instead of making real HTTP requests
+- Using random.choice() or random.sample() to fake scraped/generated results
+- Using 'example.com' or any placeholder URL
+
+MANDATORY REQUIREMENTS:
+- MUST use requests.get()/requests.post() or httpx.get()/httpx.post() with REAL URLs
+- MUST parse HTML with BeautifulSoup if scraping: from bs4 import BeautifulSoup
+- MUST handle HTTP errors: check response.status_code, try/except for ConnectionError, Timeout
+- MUST include User-Agent header in HTTP requests
+- MUST have configurable target URLs via argparse or config variables
+- If the script needs AI/LLM: MUST connect to real API (Ollama http://localhost:11434 or OpenAI-compatible)
+- The user must only need to set their API URL/key — no simulated AI responses
+
 RULES:
-1. Use ONLY these libraries: os, json, re, datetime, smtplib, sqlite3, subprocess, tempfile, logging, httpx, apscheduler, requests, python-docx, pathlib, csv, argparse, hashlib, urllib
-2. DO NOT use flask, django, fastapi, notion_client, or any other library not in the list above
-3. Add try/except error handling
-4. Add docstrings to ALL functions
-5. Add type hints to ALL function arguments
-6. Output ONLY the fixed Python code, no explanations
+1. Use ONLY standard Python libraries or: httpx, apscheduler, pytrends, requests, python-docx, beautifulsoup4.
+2. DO NOT use flask, django, fastapi, notion_client, googlesearch, or any unlisted library.
+3. Every function MUST have a docstring and type hints.
+4. Code MUST include try/except error handling.
+5. Output ONLY the fixed Python code, no explanations.
 
 Original code:
 ```python
@@ -215,7 +265,7 @@ Original code:
                     "prompt": fix_prompt,
                     "stream": False,
                     "keep_alive": 0,
-                    "options": {"temperature": 0.1, "num_predict": 2048}
+                    "options": {"temperature": 0.1, "num_predict": 4096}
                 }
             )
             client.close()
