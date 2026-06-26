@@ -400,6 +400,49 @@ class FileAgent:
         req_note = "All dependencies are installed automatically by the setup script." if reqs \
             else "No external dependencies required (pure standard library)."
 
+        # Detekuj, či produkt obsahuje web-scraping kód
+        all_code = " ".join(b["content"] for b in blocks)
+        is_scraping = any(kw in all_code for kw in ("BeautifulSoup", "requests.get", "httpx.get", "playwright", "selenium"))
+        ptype = product.get("_meta", {}).get("type", "")
+        is_prompt_pack = ptype == "prompt_pack" or "prompt" in title.lower()
+
+        if is_scraping:
+            pro_tips = (
+                "## 💡 Pro Tips\n\n"
+                "- **Use proxies** when scraping at scale to avoid IP bans and rate limits. "
+                "Rotate residential proxies for best results.\n"
+                "- Run small test batches first to validate your target sources.\n\n"
+            )
+            disclaimer = (
+                "## ⚠️ Disclaimer\n\n"
+                "This software is provided **AS IS**, without warranty of any kind. "
+                "You are solely responsible for complying with **GDPR** and all applicable data-protection "
+                "and anti-spam laws in your jurisdiction. Target website structures (HTML) may change over "
+                "time, which can require updates to the scraping logic.\n"
+            )
+        elif is_prompt_pack:
+            pro_tips = (
+                "## 💡 Pro Tips\n\n"
+                "- Combine multiple prompts in sequence to create powerful AI workflows.\n"
+                "- Adjust the `temperature` parameter in the API call to control creativity vs. precision.\n\n"
+            )
+            disclaimer = (
+                "## ⚠️ Disclaimer\n\n"
+                "This software is provided **AS IS**, without warranty of any kind. "
+                "AI model outputs may vary — always review generated content before publishing or sharing.\n"
+            )
+        else:
+            pro_tips = (
+                "## 💡 Pro Tips\n\n"
+                "- Run the tool with `--help` to explore all available options.\n"
+                "- Check the `requirements.txt` to ensure all dependencies are up to date.\n\n"
+            )
+            disclaimer = (
+                "## ⚠️ Disclaimer\n\n"
+                "This software is provided **AS IS**, without warranty of any kind. "
+                "Always test in a staging environment before using in production.\n"
+            )
+
         return (
             f"# {title}\n\n"
             f"{desc}\n\n"
@@ -425,15 +468,8 @@ class FileAgent:
             "```bash\n"
             f"{usage}\n"
             "```\n\n"
-            "## 💡 Pro Tips\n\n"
-            "- **Use proxies** when scraping at scale to avoid IP bans and rate limits. "
-            "Rotate residential proxies for best results.\n"
-            "- Run small test batches first to validate your target sources.\n\n"
-            "## ⚠️ Disclaimer\n\n"
-            "This software is provided **AS IS**, without warranty of any kind. "
-            "You are solely responsible for complying with **GDPR** and all applicable data-protection "
-            "and anti-spam laws in your jurisdiction. Target website structures (HTML) may change over "
-            "time, which can require updates to the scraping logic.\n"
+            + pro_tips
+            + disclaimer
         )
 
     def _generate_setup_sh(self) -> str:

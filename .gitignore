@@ -1,5 +1,8 @@
 # Súkromné dáta (NIKDY nahrávať!)
 .env
+gumroad_cookies.json
+*.db
+*.csv
 
 # Vygenerovaný obsah a logy
 output/

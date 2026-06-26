@@ -1,6 +1,7 @@
 import httpx
+from config import GUMROAD_ACCESS_TOKEN
 
-token = 'FRISmFWhLjw65VBcnrKvffBqQrL9-DK6uGTzQTlO1Mw'
+token = GUMROAD_ACCESS_TOKEN
 product_id = 'izXE94c4WrpKf749RE_-gQ=='
 
 res = httpx.get(f'https://api.gumroad.com/v2/products/{product_id}', params={'access_token': token})
