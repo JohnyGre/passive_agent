@@ -13,7 +13,6 @@ import logging
 import httpx
 from pathlib import Path
 
-# Načítanie configu
 from config import GUMROAD_ACCESS_TOKEN, PRODUCTS_DIR, PRODUCT_PRICE_USD
 
 log = logging.getLogger("GumroadAgent")
@@ -24,7 +23,6 @@ GUMROAD_API = "https://api.gumroad.com/v2"
 class GumroadAgent:
     def __init__(self, access_token=None):
         self.token = access_token or GUMROAD_ACCESS_TOKEN
-        # Používame jedného klienta s dlhým timeoutom (S3 uploady môžu trvať)
         self.client = httpx.Client(timeout=600.0)
         self.published_log = PRODUCTS_DIR.parent / "logs" / "published.json"
         self._published = self._load_published()
@@ -168,10 +166,13 @@ class GumroadAgent:
         """
         Kompletný 3-fázový S3 upload.
         Vracia finálnu internú URL súboru z Gumroadu.
+
+        FIX: Multipart completion používa indexované kľúče parts[i][part_number]
+        namiesto parts[][part_number], ktoré prepísalo každú časť v slučke.
         """
         filename = os.path.basename(file_path)
         filesize = os.path.getsize(file_path)
-        
+
         # FÁZA 1: Presign
         log.info(f"Fáza 1: S3 Presign pre {filename} ({filesize} B)")
         res1 = self.client.post(f"{GUMROAD_API}/files/presign", data={
@@ -181,70 +182,100 @@ class GumroadAgent:
         })
         res1.raise_for_status()
         presign_data = res1.json()
-        
-        # API vráti zoznam častí (parts) a interné ID súboru
+
         parts = presign_data.get("parts", [])
         upload_id = presign_data.get("upload_id")
         key = presign_data.get("key")
-        
+
         completed_parts = []
-        
-        # PITFALL: Ak je ZIP príliš malý, Gumroad nevráti "parts", ale rovno jednu S3 URL.
+
+        # Malý súbor — Gumroad vrátil priamy S3 link namiesto multipart
         if not parts and "url" in presign_data:
             log.info("Súbor je malý, Gumroad vrátil priamy S3 link. Nahrávam celý naraz...")
             with open(file_path, "rb") as f:
-                s3_res = self.client.put(presign_data["url"], content=f.read(), headers={}) # Pridané headers={}
+                s3_res = self.client.put(presign_data["url"], content=f.read(), headers={})
                 s3_res.raise_for_status()
+
         elif parts:
+            # FÁZA 2: Multipart upload
             log.info(f"Fáza 2: Rozsekávam a nahrávam {len(parts)} častí priamo na S3...")
             chunk_size = math.ceil(filesize / len(parts))
-            
+
             with open(file_path, "rb") as f:
                 for part in parts:
                     part_number = part["part_number"]
                     presigned_url = part["presigned_url"]
                     chunk_data = f.read(chunk_size)
-                    
-                    # AWS S3 vyžaduje striktne PUT požiadavku, žiadne extra hlavičky!
-                    s3_res = self.client.put(presigned_url, content=chunk_data, headers={}) # Pridané headers={}
+
+                    # AWS S3 vyžaduje striktne PUT, žiadne extra hlavičky
+                    s3_res = self.client.put(presigned_url, content=chunk_data, headers={})
                     s3_res.raise_for_status()
                     etag = s3_res.headers.get("ETag", "").strip('"')
                     completed_parts.append((part_number, etag))
+
         else:
             raise ValueError(f"Chybná štruktúra Presign JSON: {presign_data}")
-            
-        # FÁZA 3: Potvrdenie a dokončenie
+
+        # FÁZA 3: Completion
         log.info("Fáza 3: Potvrdzujem (Complete) na Gumroade...")
-        complete_payload = {
+        
+        # 1. Skúsime najprv poslať čistý JSON payload
+        json_payload = {
             "access_token": self.token,
-            "upload_id": upload_id,
             "key": key
         }
+        if upload_id:
+            json_payload["upload_id"] = upload_id
         if completed_parts:
             completed_parts.sort(key=lambda x: x[0])
-            # Gumroad API očakáva parts[][part_number] a parts[][etag] ako zoznamy
-            for i, (pn, et) in enumerate(completed_parts):
-                complete_payload[f"parts[][part_number]"] = str(pn)
-                complete_payload[f"parts[][etag]"] = et
+            json_payload["parts"] = [
+                {"part_number": pn, "etag": et}
+                for pn, et in completed_parts
+            ]
 
-        res3 = self.client.post(f"{GUMROAD_API}/files/complete", data=complete_payload)
-        res3.raise_for_status()
-        complete_data = res3.json()
-        
+        try:
+            log.info("Skúšam odoslať potvrdzujúci request ako JSON...")
+            res3 = self.client.post(f"{GUMROAD_API}/files/complete", json=json_payload)
+            res3.raise_for_status()
+            complete_data = res3.json()
+        except httpx.HTTPStatusError as json_err:
+            log.warning(f"JSON completion zlyhal (kód {json_err.response.status_code}): {json_err.response.text}")
+            log.info("Skúšam fallback na form-data...")
+            
+            # Fallback na form-data payload (vrátime sa k indexovanej podobe)
+            form_payload = {
+                "access_token": self.token,
+                "key": key
+            }
+            if upload_id:
+                form_payload["upload_id"] = upload_id
+            if completed_parts:
+                for i, (pn, et) in enumerate(completed_parts):
+                    form_payload[f"parts[{i}][part_number]"] = str(pn)
+                    form_payload[f"parts[{i}][etag]"] = et
+            
+            try:
+                res3 = self.client.post(f"{GUMROAD_API}/files/complete", data=form_payload)
+                res3.raise_for_status()
+                complete_data = res3.json()
+            except httpx.HTTPStatusError as form_err:
+                log.error(f"Fallback na form-data zlyhal tiež (kód {form_err.response.status_code}): {form_err.response.text}")
+                raise form_err
+
         fin_url = complete_data.get("url") or complete_data.get("file_url")
         if not fin_url:
-             raise ValueError(f"Complete endpoint nevrátil URL súboru: {complete_data}")
-             
+            raise ValueError(f"Complete endpoint nevrátil URL súboru: {complete_data}")
+
         log.info(f"✅ Súbor pripravený v cloude: {fin_url}")
         return fin_url
-    
+
     def _upload_cover_to_catbox(self, cover_path: Path | str) -> str | None:
         """Nahrá cover na Catbox.moe a vráti verejný direct link."""
         cover_path = Path(cover_path)
         if not cover_path.exists():
             return None
         try:
-            log.info(f"Nahrávam cover {cover_path.name} na Catbox.moe pre získanie verejného linku...")
+            log.info(f"Nahrávam cover {cover_path.name} na Catbox.moe...")
             with open(cover_path, "rb") as f:
                 res = self.client.post(
                     "https://catbox.moe/user/api.php",
@@ -283,15 +314,13 @@ class GumroadAgent:
         Publikuje Basic aj Pro verzie produktu ako samostatné položky na Gumroade.
         """
         product_dir = Path(product_dir)
-        
-        # Ochrana proti duplicite
+
         if product_dir.name in self._published:
             pub_info = self._published[product_dir.name]
             if "product_id" in pub_info or ("basic" in pub_info and "pro" in pub_info):
                 log.warning(f"⏭️ Už publikovaný: {pub_info}")
                 return pub_info
 
-        # Zisti cesty k súborom
         pro_dir = product_dir / "v2_PRO_Automation_Kit"
         diy_dir = product_dir / "v1_DIY_Basic"
 
@@ -315,7 +344,6 @@ class GumroadAgent:
             log.warning(f"Žiadny ZIP ani DOCX súbor v {product_dir.name}")
             return None
 
-        # Názov a manifest
         base_product_name = product_dir.name.split("_", 2)[-1].replace("_", " ").title()
         manifest = {}
         data_json = product_dir / "data.json"
@@ -327,7 +355,6 @@ class GumroadAgent:
             except Exception:
                 pass
 
-        # Vypočítaj ceny pre obe verzie
         if price is None:
             price = PRODUCT_PRICE_USD
         else:
@@ -336,11 +363,8 @@ class GumroadAgent:
             except ValueError:
                 price = PRODUCT_PRICE_USD
 
-        # Ochrana pred prehnanými cenami:
-        # Horná hranica ceny pre Pro verziu je 14.99 USD, pre Basic verziu 5.99 USD
         pro_price = min(price, 14.99)
-        
-        # Výpočet ceny pre Basic verziu na základe Pro ceny
+
         if pro_price >= 12.0:
             basic_price = 4.99
         elif pro_price >= 7.0:
@@ -348,7 +372,6 @@ class GumroadAgent:
         else:
             basic_price = 2.99
 
-        # Nahraj cover na Catbox raz
         catbox_url = None
         actual_cover_path = cover_path or (product_dir / "cover.jpg")
         if actual_cover_path:
@@ -358,7 +381,6 @@ class GumroadAgent:
 
         result_info = {}
 
-        # 1. NAHRATIE BASIC VERZIE (DOCX)
         if docx_file:
             log.info(f"Nahrávam Basic verziu: {docx_file.name} (${basic_price})...")
             basic_info = self._publish_single_item(
@@ -372,7 +394,6 @@ class GumroadAgent:
             if basic_info:
                 result_info["basic"] = basic_info
 
-        # 2. NAHRATIE PRO VERZIE (ZIP)
         if zip_file:
             log.info(f"Nahrávam Pro verziu: {zip_file.name} (${pro_price})...")
             pro_info = self._publish_single_item(
@@ -411,10 +432,7 @@ class GumroadAgent:
                 "files[][url]": file_url
             }
 
-            res = self.client.post(
-                f"{GUMROAD_API}/products",
-                data=payload
-            )
+            res = self.client.post(f"{GUMROAD_API}/products", data=payload)
             res.raise_for_status()
             resp_data = res.json()
 

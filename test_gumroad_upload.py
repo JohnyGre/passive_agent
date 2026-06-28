@@ -90,20 +90,49 @@ def s3_presign_upload_standalone(file_path: str, access_token: str) -> str | Non
             
         # FÁZA 3: Potvrdenie a dokončenie
         log.info("Fáza 3: Potvrdzujem (Complete) na Gumroade...")
-        complete_payload = {
+        
+        # 1. Skúsime najprv poslať čistý JSON payload
+        json_payload = {
             "access_token": access_token,
-            "upload_id": upload_id,
             "key": key
         }
+        if upload_id:
+            json_payload["upload_id"] = upload_id
         if completed_parts:
             completed_parts.sort(key=lambda x: x[0])
-            for i, (pn, et) in enumerate(completed_parts):
-                complete_payload[f"parts[][part_number]"] = str(pn)
-                complete_payload[f"parts[][etag]"] = et
+            json_payload["parts"] = [
+                {"part_number": pn, "etag": et}
+                for pn, et in completed_parts
+            ]
 
-        res3 = client.post(f"{GUMROAD_API}/files/complete", data=complete_payload)
-        res3.raise_for_status()
-        complete_data = res3.json()
+        try:
+            log.info("Skúšam odoslať potvrdzujúci request ako JSON...")
+            res3 = client.post(f"{GUMROAD_API}/files/complete", json=json_payload)
+            res3.raise_for_status()
+            complete_data = res3.json()
+        except httpx.HTTPStatusError as json_err:
+            log.warning(f"JSON completion zlyhal (kód {json_err.response.status_code}): {json_err.response.text}")
+            log.info("Skúšam fallback na form-data...")
+            
+            # Fallback na form-data payload (vrátime sa k indexovanej podobe)
+            form_payload = {
+                "access_token": access_token,
+                "key": key
+            }
+            if upload_id:
+                form_payload["upload_id"] = upload_id
+            if completed_parts:
+                for i, (pn, et) in enumerate(completed_parts):
+                    form_payload[f"parts[{i}][part_number]"] = str(pn)
+                    form_payload[f"parts[{i}][etag]"] = et
+            
+            try:
+                res3 = client.post(f"{GUMROAD_API}/files/complete", data=form_payload)
+                res3.raise_for_status()
+                complete_data = res3.json()
+            except httpx.HTTPStatusError as form_err:
+                log.error(f"Fallback na form-data zlyhal tiež (kód {form_err.response.status_code}): {form_err.response.text}")
+                raise form_err
         
         fin_url = complete_data.get("url") or complete_data.get("file_url")
         if not fin_url:

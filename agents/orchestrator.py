@@ -6,8 +6,6 @@ Zabezpečuje robustnú linku, vylepšenú validáciu a agresívnu správu VRAM.
 import logging
 import random
 import time
-import gc  # Garbage Collector pre uvoľňovanie RAM
-import torch # Pre manuálne uvoľňovanie VRAM
 import re # Pre extrakciu Python kódu
 from datetime import datetime
 
@@ -26,7 +24,7 @@ from agents.validation_agent import ValidationAgent
 from config import (
     SCHEDULE,
     PRODUCTS_PER_DAY,
-    GUMROAD_ACCESS_TOKEN, # Importujeme GUMROAD_ACCESS_TOKEN
+    GUMROAD_ACCESS_TOKEN,
     GUMROAD_EMAIL,
     GUMROAD_PASSWORD,
 )
@@ -55,20 +53,28 @@ class Orchestrator:
         return 4.99
 
     def _cleanup_resources(self):
-        """Agresívne uvoľňovanie pamäte medzi agentmi (Kľúčové pre 4GB VRAM)."""
+        """Agresívne uvoľňovanie pamäte medzi agentmi (Kľúčové pre 4GB VRAM).
+
+        FIX: gc a torch sú lazy-importované — orchestrátor naštartuje
+        aj keď torch nie je nainštalovaný (napr. CPU-only prostredie).
+        """
+        import gc
         log.info("🧹 Vyčisťujem zdroje (RAM/VRAM)...")
         gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        except ImportError:
+            pass  # torch nie je nainštalovaný — OK, pokračujeme
 
     def _extract_python_code(self, text: str) -> str:
         """Extrahuje Python kód z markdown bloku (```python, ```py, alebo len ```)."""
-        # Hľadá ```python, ```py, alebo len ``` a extrahuje obsah
         match = re.search(r'```(?:python|py)?\s*(.*?)\s*```', text, re.DOTALL)
         if match:
             return match.group(1).strip()
-        return text.strip() # Ak nenájdeme markdown, vrátime celý text
+        return text.strip()
 
     def job_generate_products(self):
         log.info(f"🚀 Spúšťam výrobnú linku: {PRODUCTS_PER_DAY} nových produktov...")
@@ -80,20 +86,17 @@ class Orchestrator:
             log.warning("❌ Žiadne trendy k spracovaniu.")
             return
 
-        # Získaj všetky už vygenerované safe názvy tém z priečinka
         from config import PRODUCTS_DIR
         existing_safes = set()
         if PRODUCTS_DIR.exists():
             for d in PRODUCTS_DIR.iterdir():
                 if d.is_dir():
-                    # Zložky sú pomenované YYYYMMDD_HHMMSS_safe_name
                     parts = d.name.split("_", 2)
                     if len(parts) >= 3:
                         existing_safes.add(parts[2].lower())
                     else:
                         existing_safes.add(d.name.lower())
 
-        # Vyfiltruj trendy, ktoré už boli vygenerované
         filtered_trends = []
         for trend in self._current_trends:
             topic = trend["keyword"]
@@ -126,8 +129,6 @@ class Orchestrator:
                     continue
 
                 product["_meta"]["suggested_price"] = suggested_price
-
-                # Okamžite uvoľniť pamäť po ContentAgente, aby bolo miesto pre CoverAgent
                 self._cleanup_resources()
 
                 # 2. PRO VALIDÁCIA + RETRY LOOP (max 2 pokusy o opravu)
@@ -140,7 +141,6 @@ class Orchestrator:
                     log.info("  🔍 Spúšťam komplexnú PRO validáciu kódu...")
                     is_valid, issues = self.validator.full_check(python_code)
 
-                    # RETRY: Ak kód neprešiel, pokús sa ho opraviť cez LLM
                     if not is_valid:
                         log.warning(f"  ⚠️ Kód má nedostatky, pokúšam sa o opravu...")
                         for retry in range(2):
@@ -150,35 +150,31 @@ class Orchestrator:
                                 is_valid, issues = self.validator.full_check(python_code)
                                 if is_valid:
                                     log.info(f"  ✅ Kód opravený na pokus {retry+1}!")
-                                    # Update product s opraveným kódom
                                     product["pro_kit"]["scripts"][0]["content"] = python_code
                                     break
                             self._cleanup_resources()
 
-                    product["code_quality"] = {
-                        "is_valid": is_valid,
-                        "issues": issues
-                    }
+                    product["code_quality"] = {"is_valid": is_valid, "issues": issues}
                     if is_valid:
                         log.info("  ✅ Kód prešiel všetkými PRO testami.")
                     else:
                         log.warning(f"  ⚠️ Kód má nedostatky: {', '.join(issues)}")
 
-                # 3. UKLADANIE (Vytvorí v1_DIY a v2_PRO)
+                # 3. UKLADANIE
                 paths = self.files.save(product)
                 product_dir = paths["json"].parent
                 product_title = product.get("metadata", {}).get("title") or product.get("title", topic)
                 self.reporter.record("product_created", {"title": product_title, "type": ptype})
 
-                # 4. MARKETING (Cover generovanie je dočasne vypnuté)
+                # 4. MARKETING
                 log.info("  🎨 Generujem marketingové materiály...")
                 m_data = self.marketing.generate_marketing(product)
                 if m_data:
                     self.marketing.save_marketing(m_data, product_dir)
 
-                # Cover generovanie (lokálne SD - VRAM je voľná, obsah beží cez cloud)
+                # Cover generovanie
                 log.info("  🖼️ Generujem produktový cover (Stable Diffusion)...")
-                cover_path = None # Inicializujeme cover_path
+                cover_path = None
                 try:
                     cover_path = self.cover.generate_cover(product, folder=product_dir)
                     if cover_path:
@@ -191,7 +187,7 @@ class Orchestrator:
                 self._cleanup_resources()
 
                 # 5. GUMROAD UPLOAD
-                if GUMROAD_ACCESS_TOKEN: # Ak je token definovaný, pokúsime sa uploadovať
+                if GUMROAD_ACCESS_TOKEN:
                     log.info("  ⬆️ Nahrávam produkt na Gumroad...")
                     try:
                         gumroad_result = self.gumroad.publish_product_dir(product_dir, suggested_price, cover_path)
@@ -200,7 +196,7 @@ class Orchestrator:
                         else:
                             log.warning("  ⚠️ Produkt sa nenahral na Gumroad.")
                     except Exception as gumroad_err:
-                        log.error(f"  ❌ Gumroad upload zlyhal pre '{product_title}': {gumroad_err}", exc_info=True) # Pridané exc_info
+                        log.error(f"  ❌ Gumroad upload zlyhal pre '{product_title}': {gumroad_err}", exc_info=True)
                 else:
                     log.info("  🛒 Gumroad upload je vypnutý (GUMROAD_ACCESS_TOKEN nie je nastavený).")
 
@@ -208,7 +204,7 @@ class Orchestrator:
 
             except Exception as e:
                 log.error(f"💥 Kritická chyba pri '{topic}': {e}", exc_info=True)
-                self._cleanup_resources() # Pri chybe aj tak vyčistiť, aby ďalší produkt nepadol
+                self._cleanup_resources()
 
         log.info("✅ Celý výrobný cyklus dokončený.")
 
@@ -242,7 +238,6 @@ MANDATORY REQUIREMENTS:
 - MUST include User-Agent header in HTTP requests
 - MUST have configurable target URLs via argparse or config variables
 - If the script needs AI/LLM: MUST connect to real API (Ollama http://localhost:11434 or OpenAI-compatible)
-- The user must only need to set their API URL/key — no simulated AI responses
 
 RULES:
 1. Use ONLY standard Python libraries or: httpx, apscheduler, pytrends, requests, python-docx, beautifulsoup4.
